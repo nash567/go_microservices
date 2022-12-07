@@ -1,6 +1,7 @@
 # go_microservices
 
 ## Folders
+```
 .
 ├── authentication-service
 │   ├── authApp
@@ -101,3 +102,4 @@
 │   ├── Makefile
 │   └── swarm.yaml
 └── README.md
+```
