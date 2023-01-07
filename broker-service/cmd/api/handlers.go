@@ -2,11 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/rpc"
+	"time"
 
 	"github.com/broker-service/event"
+	"github.com/broker-service/logs"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type RequestPayload struct {
@@ -31,6 +38,7 @@ type AuthPayload struct {
 }
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("req came inside broker")
 	payload := jsonResponse{
 		Error:   false,
 		Message: "Hit the broker",
@@ -52,7 +60,7 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "auth":
 		app.authenticate(w, reqPayload.Auth)
 	case "log":
-		app.logEventViaRabbit(w, reqPayload.Log)
+		app.logItemViaRPC(w, reqPayload.Log)
 	case "mail":
 		app.sendMail(w, reqPayload.Mail)
 	default:
@@ -66,6 +74,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	// call the service
 	request, err := http.NewRequest("POST", "http://authentication-service/authenticate", bytes.NewBuffer(jsonData))
 	if err != nil {
+		fmt.Println("error is", err)
 		app.errorJSON(w, err)
 		return
 	}
@@ -74,6 +83,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	resp, err := client.Do(request)
 
 	if err != nil {
+		fmt.Println("error doing request is", err)
 		app.errorJSON(w, err)
 		return
 	}
@@ -198,4 +208,73 @@ func (app *Config) pushToQueue(name, msg string) error {
 		return err
 	}
 	return nil
+}
+
+// type RPCPayload struct {
+// 	Name string
+// 	Data string
+// }
+
+func (app *Config) logItemViaRPC(w http.ResponseWriter, l LogPayload) {
+	client, err := rpc.Dial("tcp", "logger-service:5001")
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	rpcPayload := LogPayload{
+		Name: l.Name,
+		Data: l.Data,
+	}
+	var result string
+	err = client.Call("RPCServer.LogInfo", rpcPayload, &result)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = result
+	app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Config) LogViaGRPC(w http.ResponseWriter, r *http.Request) {
+	var reqPayload RequestPayload
+
+	err := app.readJSON(w, r, &reqPayload)
+
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	conn, err := grpc.Dial("logger-service:50001", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	defer conn.Close()
+
+	c := logs.NewLogServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+
+	defer cancel()
+
+	_, err = c.WriteLog(ctx, &logs.LogRequest{
+		LogEntry: &logs.Log{
+			Name: reqPayload.Log.Name,
+			Data: reqPayload.Log.Data,
+		},
+	})
+
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "logged using grpc"
+	app.writeJSON(w, http.StatusAccepted, payload)
+
 }

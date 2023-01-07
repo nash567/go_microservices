@@ -1,0 +1,9 @@
+database:
+  name: mongodb
+  host: mongo
+  password: password
+  port: 27017
+  username: admin
+urlhost: localhost
+urlport: 8080
+GRPCPort: 5001

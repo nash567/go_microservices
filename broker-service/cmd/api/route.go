@@ -14,7 +14,7 @@ func (app *Config) routes() http.Handler {
 	// who is allowed to connect
 
 	mux.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedOrigins:   []string{"https://*", "http://*", "*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Content-Length", "Accept", "Authorization", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
@@ -24,6 +24,7 @@ func (app *Config) routes() http.Handler {
 
 	mux.Use(middleware.Heartbeat("/ping"))
 	mux.Post("/", app.Broker)
+	mux.Post("/log-grpc", app.LogViaGRPC)
 	mux.Post("/handle", app.HandleSubmission)
 
 	return mux
